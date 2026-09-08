@@ -272,6 +272,34 @@ app.get('/api/data', async (req, res) => {
   // ส่งข้อมูลกลับไปให้หน้าเว็บ
   res.json(data);
 });
+  // ==========================================
+// 4. API สำหรับจัดการหมวดหมู่ผ่านหน้าเว็บ
+// ==========================================
+
+// 4.1 ขอดูหมวดหมู่ทั้งหมดของตัวเอง
+app.get('/api/categories', async (req, res) => {
+  const userId = req.query.userId;
+  const { data, error } = await supabase.from('user_categories').select('*').eq('user_id', userId);
+  res.json(data || []);
+});
+
+// 4.2 สร้างหมวดหมู่ใหม่ + ตั้งลิมิต
+app.post('/api/categories', express.json(), async (req, res) => {
+  const { userId, wallet_type, category_name, monthly_limit } = req.body;
+  const { error } = await supabase.from('user_categories').insert([
+    { user_id: userId, wallet_type: wallet_type, category_name: category_name, monthly_limit: monthly_limit }
+  ]);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+// 4.3 ลบหมวดหมู่ทิ้ง
+app.delete('/api/categories', express.json(), async (req, res) => {
+  const { userId, wallet_type, category_name } = req.body;
+  const { error } = await supabase.from('user_categories')
+    .delete().match({ user_id: userId, wallet_type: wallet_type, category_name: category_name });
+  res.json({ success: !error });
+});
 
 const PORT = 3000;
 app.listen(PORT, () => {

@@ -3,32 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบสรุปยอดบัญชี</title>
-    <!-- โหลด LIFF SDK, Chart.js และ Tailwind CSS (สำหรับทำ UI ให้สวยงาม) -->
+    <title>ระบบบัญชีของฉัน</title>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- โหลดฟอนต์ภาษาไทย -->
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Kanit', sans-serif; background-color: #F3F4F6; }
-    </style>
+    <style> body { font-family: 'Kanit', sans-serif; background-color: #F3F4F6; } </style>
 </head>
-<body class="text-gray-800 pb-10">
+<body class="text-gray-800 pb-20">
 
-    <!-- แถบด้านบน -->
+    <!-- แถบด้านบนและเมนูนำทาง -->
     <div class="bg-blue-600 text-white text-center p-5 rounded-b-3xl shadow-lg sticky top-0 z-10">
-        <h2 class="text-xl font-semibold">📊 แดชบอร์ดการเงิน</h2>
+        <h2 class="text-xl font-semibold">บัญชีส่วนตัว</h2>
+        <div class="flex justify-center mt-3 gap-4">
+            <button onclick="switchTab('dashboard')" id="btn-dashboard" class="px-4 py-1 bg-white text-blue-600 rounded-full font-bold text-sm">📊 แดชบอร์ด</button>
+            <button onclick="switchTab('settings')" id="btn-settings" class="px-4 py-1 bg-blue-500 text-white rounded-full font-bold text-sm opacity-80">⚙️ ตั้งค่า</button>
+        </div>
     </div>
     
-    <div id="loading" class="text-center mt-20 text-gray-500 animate-pulse">
-        กำลังโหลดข้อมูล... ⏳
-    </div>
+    <div id="loading" class="text-center mt-20 text-gray-500 animate-pulse">กำลังโหลดข้อมูล... ⏳</div>
 
-    <!-- ส่วนเนื้อหาหลัก (ซ่อนไว้ก่อนจนกว่าจะโหลดเสร็จ) -->
+    <!-- หน้า 1: แดชบอร์ด (เอาไว้ดูสรุปเหมือนเดิม) -->
     <div class="max-w-md mx-auto mt-6 px-4 hidden" id="dashboard">
-        
-        <!-- การ์ดสรุปยอดรวม (รายรับ - รายจ่าย) -->
         <div class="grid grid-cols-2 gap-4 mb-6">
             <div class="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-green-500">
                 <p class="text-xs text-gray-500 mb-1">รายรับรวม</p>
@@ -39,129 +35,128 @@
                 <p class="text-lg font-bold text-red-600" id="totalExpense">0 ฿</p>
             </div>
         </div>
-
-        <!-- กราฟวงกลม -->
         <div class="bg-white p-5 rounded-2xl shadow-sm mb-6">
-            <h3 class="text-md font-semibold text-gray-700 mb-4 text-center">สัดส่วนรายจ่ายทั้งหมด</h3>
+            <h3 class="text-md font-semibold text-gray-700 mb-4 text-center">สัดส่วนรายจ่าย</h3>
             <canvas id="myChart"></canvas> 
         </div>
+    </div>
 
-        <!-- ประวัติรายการย้อนหลัง -->
-        <div class="bg-white p-5 rounded-2xl shadow-sm">
-            <h3 class="text-md font-semibold text-gray-700 mb-4">ประวัติล่าสุด (10 รายการ)</h3>
-            <div id="historyList" class="flex flex-col gap-3">
-                <!-- โค้ด JavaScript จะเอาประวัติมาแทรกตรงนี้ -->
-            </div>
+    <!-- หน้า 2: ตั้งค่าหมวดหมู่ -->
+    <div class="max-w-md mx-auto mt-6 px-4 hidden" id="settings">
+        <!-- ฟอร์มเพิ่มหมวดหมู่ -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm mb-6">
+            <h3 class="text-md font-semibold text-gray-700 mb-4">➕ เพิ่มหมวดหมู่ใหม่</h3>
+            <select id="newWallet" class="w-full mb-3 p-2 border rounded-lg bg-gray-50">
+                <option value="personal">🏠 กระเป๋าส่วนตัว</option>
+                <option value="business">🏢 กระเป๋าร้านค้า</option>
+            </select>
+            <input type="text" id="newCategory" placeholder="ชื่อหมวดหมู่ (เช่น ช้อปปิ้ง, ค่าน้ำไฟ)" class="w-full mb-3 p-2 border rounded-lg bg-gray-50">
+            <input type="number" id="newLimit" placeholder="ตั้งงบจำกัดต่อเดือน (ใส่ 0 คือไม่จำกัด)" class="w-full mb-3 p-2 border rounded-lg bg-gray-50">
+            <button onclick="addCategory()" class="w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow">บันทึกหมวดหมู่</button>
         </div>
 
+        <!-- รายการหมวดหมู่ที่มีอยู่ -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm">
+            <h3 class="text-md font-semibold text-gray-700 mb-4">📝 หมวดหมู่ของคุณ</h3>
+            <div id="categoryList" class="flex flex-col gap-3"></div>
+        </div>
     </div>
 
     <script>
+        let myUserId = '';
+        let myChartInstance = null;
+
         async function main() {
             try {
-                // 🛑 เปลี่ยนเป็น LIFF ID ของคุณฟิว
-                await liff.init({ liffId: "2011471625-4VRpJIDF" });
-                
+                await liff.init({ liffId: "2011471625-4VRpJIDF" }); // 🛑 แก้ ID ตรงนี้
                 if (liff.isLoggedIn()) {
-                    const profile = await liff.getProfile();
-                    fetchData(profile.userId); 
-                } else {
-                    liff.login();
-                }
-            } catch (err) {
-                console.error("LIFF Init Error: ", err);
-                document.getElementById('loading').innerText = "❌ เกิดข้อผิดพลาดในการเชื่อมต่อระบบ";
-            }
+                    myUserId = (await liff.getProfile()).userId;
+                    fetchData(myUserId); 
+                    fetchCategories(myUserId);
+                } else { liff.login(); }
+            } catch (err) { console.error(err); }
         }
 
-        async function fetchData(userId) {
-            try {
-                const response = await fetch(`/api/data?userId=${userId}`);
-                const data = await response.json();
-                
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('dashboard').classList.remove('hidden');
+        // --- ระบบสลับหน้าเว็บ ---
+        function switchTab(tab) {
+            document.getElementById('dashboard').style.display = tab === 'dashboard' ? 'block' : 'none';
+            document.getElementById('settings').style.display = tab === 'settings' ? 'block' : 'none';
+            
+            document.getElementById('btn-dashboard').className = tab === 'dashboard' ? 'px-4 py-1 bg-white text-blue-600 rounded-full font-bold text-sm' : 'px-4 py-1 bg-blue-500 text-white rounded-full font-bold text-sm opacity-80';
+            document.getElementById('btn-settings').className = tab === 'settings' ? 'px-4 py-1 bg-white text-blue-600 rounded-full font-bold text-sm' : 'px-4 py-1 bg-blue-500 text-white rounded-full font-bold text-sm opacity-80';
+        }
 
-                renderDashboard(data); 
-            } catch (error) {
-                console.error("Fetch Data Error: ", error);
-            }
+        // --- ดึงข้อมูลสรุปยอด (แดชบอร์ด) ---
+        async function fetchData(userId) {
+            const response = await fetch(`/api/data?userId=${userId}`);
+            const data = await response.json();
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            renderDashboard(data); 
         }
 
         function renderDashboard(data) {
-            let totalInc = 0;
-            let totalExp = 0;
-            let expenseCategories = {}; // เก็บยอดแยกตามหมวดหมู่เพื่อวาดกราฟ
-
-            // 1. คำนวณยอดรวม และจัดกลุ่มข้อมูล
+            let totalInc = 0, totalExp = 0, expCats = {};
             data.forEach(item => {
-                if (item.category === 'รายรับ') {
-                    totalInc += item.amount;
-                } else {
+                if (item.category === 'รายรับ') totalInc += item.amount;
+                else {
                     totalExp += item.amount;
-                    // รวมยอดรายจ่ายแต่ละหมวดหมู่
-                    if (expenseCategories[item.category]) {
-                        expenseCategories[item.category] += item.amount;
-                    } else {
-                        expenseCategories[item.category] = item.amount;
-                    }
+                    expCats[item.category] = (expCats[item.category] || 0) + item.amount;
                 }
             });
-
-            // อัปเดตตัวเลขในการ์ดสรุปยอด
             document.getElementById('totalIncome').innerText = totalInc.toLocaleString() + ' ฿';
             document.getElementById('totalExpense').innerText = totalExp.toLocaleString() + ' ฿';
 
-            // 2. วาดกราฟ
-            const ctx = document.getElementById('myChart').getContext('2d');
-            const bgColors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
-            
-            new Chart(ctx, {
+            if(myChartInstance) myChartInstance.destroy();
+            myChartInstance = new Chart(document.getElementById('myChart').getContext('2d'), {
                 type: 'doughnut',
-                data: {
-                    labels: Object.keys(expenseCategories), // ดึงชื่อหมวดหมู่มาเป็นป้ายกำกับ
-                    datasets: [{
-                        data: Object.values(expenseCategories), // ดึงยอดเงิน
-                        backgroundColor: bgColors.slice(0, Object.keys(expenseCategories).length),
-                        borderWidth: 0
-                    }]
-                },
-                options: { responsive: true, cutout: '70%' }
+                data: { labels: Object.keys(expCats), datasets: [{ data: Object.values(expCats), backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'] }] }
             });
+        }
 
-            // 3. แสดงประวัติ 10 รายการล่าสุด
-            const historyList = document.getElementById('historyList');
-            historyList.innerHTML = ''; // ล้างของเก่า
-
-            // เลือกมาแค่ 10 อันดับแรก
-            const recentData = data.slice(0, 10);
-            
-            recentData.forEach(item => {
-                const isIncome = item.category === 'รายรับ';
-                const textColor = isIncome ? 'text-green-600' : 'text-red-500';
-                const sign = isIncome ? '+' : '-';
-                const icon = item.wallet_type === 'personal' ? '🏠' : '🏢';
-                
-                // แปลงวันที่ให้อ่านง่าย
-                const dateObj = new Date(item.created_at);
-                const dateStr = dateObj.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' });
-                const timeStr = dateObj.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-
-                historyList.innerHTML += `
+        // --- ระบบดึง/เพิ่ม/ลบ หมวดหมู่ ---
+        async function fetchCategories(userId) {
+            const res = await fetch(`/api/categories?userId=${userId}`);
+            const cats = await res.json();
+            const list = document.getElementById('categoryList');
+            list.innerHTML = '';
+            cats.forEach(c => {
+                const icon = c.wallet_type === 'personal' ? '🏠' : '🏢';
+                const limitTxt = c.monthly_limit > 0 ? `<span class="text-xs text-red-500">งบ: ${c.monthly_limit.toLocaleString()}฿</span>` : '';
+                list.innerHTML += `
                     <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
-                        <div class="flex items-center gap-3">
-                            <div class="text-2xl">${icon}</div>
-                            <div>
-                                <p class="font-semibold text-gray-800 text-sm">${item.category}</p>
-                                <p class="text-xs text-gray-400">${dateStr} • ${timeStr}</p>
-                            </div>
-                        </div>
-                        <div class="font-bold ${textColor}">
-                            ${sign}${item.amount.toLocaleString()} ฿
-                        </div>
-                    </div>
-                `;
+                        <div><p class="font-semibold text-gray-800 text-sm">${icon} ${c.category_name}</p>${limitTxt}</div>
+                        ${c.category_name !== 'รายรับ' ? `<button onclick="deleteCategory('${c.wallet_type}', '${c.category_name}')" class="text-red-500 text-sm font-bold bg-red-100 px-2 py-1 rounded">ลบ</button>` : ''}
+                    </div>`;
             });
+        }
+
+        async function addCategory() {
+            const wallet = document.getElementById('newWallet').value;
+            const catName = document.getElementById('newCategory').value;
+            const limit = document.getElementById('newLimit').value || 0;
+            
+            if(!catName) return alert('กรุณาพิมพ์ชื่อหมวดหมู่');
+            
+            await fetch('/api/categories', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ userId: myUserId, wallet_type: wallet, category_name: catName, monthly_limit: parseInt(limit) })
+            });
+            
+            document.getElementById('newCategory').value = '';
+            document.getElementById('newLimit').value = '';
+            fetchCategories(myUserId); // รีเฟรชรายการ
+            alert('บันทึกเรียบร้อย! ลองพิมพ์ตัวเลขในแชทดูได้เลยครับ');
+        }
+
+        async function deleteCategory(wallet, catName) {
+            if(confirm(`ต้องการลบหมวดหมู่ "${catName}" ใช่ไหม?`)) {
+                await fetch('/api/categories', {
+                    method: 'DELETE', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ userId: myUserId, wallet_type: wallet, category_name: catName })
+                });
+                fetchCategories(myUserId);
+            }
         }
 
         main();
