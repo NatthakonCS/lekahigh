@@ -122,7 +122,48 @@ async function handleEvent(event) {
       const category = params.get('category'); // รับค่าหมวดหมู่เพิ่มมา
 
       // สเต็ป 2.1: ถ้าเพิ่งกดเลือกกระเป๋ามา ให้เด้งถามหมวดหมู่ต่อ
+      // สเต็ป 2.1: ถ้าเพิ่งกดเลือกกระเป๋ามา ให้เด้งถามหมวดหมู่ต่อ
       if (action === 'category') {
+        
+        // สร้างตัวแปรเก็บปุ่มหมวดหมู่
+        let categoryButtons = [];
+
+        // เช็กว่าเลือกกระเป๋าไหนมา
+        if (wallet === 'business') {
+          // 📦 ปุ่มสำหรับ "กระเป๋าร้านค้า"
+          categoryButtons = [
+            {
+              type: 'button', style: 'primary', color: '#4CAF50',
+              action: { type: 'postback', label: '💰 รายรับ', data: `action=save&wallet=${wallet}&amount=${amount}&category=รายรับ`, displayText: 'รายรับร้านค้า' }
+            },
+            {
+              type: 'button', style: 'secondary',
+              action: { type: 'postback', label: '💸 รายจ่าย', data: `action=save&wallet=${wallet}&amount=${amount}&category=รายจ่าย`, displayText: 'รายจ่ายร้านค้า' }
+            },
+            {
+              type: 'button', style: 'secondary',
+              action: { type: 'postback', label: '📦 ต้นทุน', data: `action=save&wallet=${wallet}&amount=${amount}&category=ต้นทุน`, displayText: 'ต้นทุนร้านค้า' }
+            }
+          ];
+        } else {
+          // 🏠 ปุ่มสำหรับ "กระเป๋าส่วนตัว"
+          categoryButtons = [
+            {
+              type: 'button', style: 'primary', color: '#4CAF50',
+              action: { type: 'postback', label: '💰 รายรับ', data: `action=save&wallet=${wallet}&amount=${amount}&category=รายรับ`, displayText: 'รายรับส่วนตัว' }
+            },
+            {
+              type: 'button', style: 'secondary',
+              action: { type: 'postback', label: '🍜 ค่าอาหาร', data: `action=save&wallet=${wallet}&amount=${amount}&category=ค่าอาหาร`, displayText: 'ค่าอาหาร' }
+            },
+            {
+              type: 'button', style: 'secondary',
+              action: { type: 'postback', label: '🚗 ค่าเดินทาง', data: `action=save&wallet=${wallet}&amount=${amount}&category=ค่าเดินทาง`, displayText: 'ค่าเดินทาง' }
+            }
+          ];
+        }
+
+        // นำปุ่มมาประกอบร่างเป็น Flex Message
         const categoryFlex = {
           type: 'flex',
           altText: 'เลือกหมวดหมู่',
@@ -132,38 +173,16 @@ async function handleEvent(event) {
               type: 'box', layout: 'vertical',
               contents: [
                 { type: 'text', text: `ยอด ${amount} บาท`, weight: 'bold', size: 'xl' },
-                { type: 'text', text: 'เป็นค่าอะไรเอ่ย?', margin: 'md' }
+                { 
+                  type: 'text', 
+                  text: wallet === 'business' ? '🏢 หมวดหมู่ของร้านค้า' : '🏠 หมวดหมู่ส่วนตัว', 
+                  margin: 'md', color: '#666666' 
+                }
               ]
             },
             footer: {
               type: 'box', layout: 'vertical', spacing: 'sm',
-              contents: [
-                { // ปุ่มรายรับ
-                  type: 'button', style: 'primary', color: '#4CAF50',
-                  action: {
-                    type: 'postback', label: '💰 รายรับ',
-                    // ส่งข้อมูลทั้งหมดไปเซฟ!
-                    data: `action=save&wallet=${wallet}&amount=${amount}&category=รายรับ`, 
-                    displayText: 'รายรับ'
-                  }
-                },
-                { // ปุ่มค่าอาหาร
-                  type: 'button', style: 'secondary',
-                  action: {
-                    type: 'postback', label: '🍜 ค่าอาหาร',
-                    data: `action=save&wallet=${wallet}&amount=${amount}&category=ค่าอาหาร`,
-                    displayText: 'ค่าอาหาร'
-                  }
-                },
-                { // ปุ่มค่าเดินทาง
-                  type: 'button', style: 'secondary',
-                  action: {
-                    type: 'postback', label: '🚗 ค่าเดินทาง',
-                    data: `action=save&wallet=${wallet}&amount=${amount}&category=ค่าเดินทาง`,
-                    displayText: 'ค่าเดินทาง'
-                  }
-                }
-              ]
+              contents: categoryButtons // ดึงปุ่มที่แยกไว้มาใส่ตรงนี้
             }
           }
         };
