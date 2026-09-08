@@ -280,6 +280,30 @@ async function handleEvent(event) {
   return Promise.resolve(null);
   
 }
+// ==========================================
+// 3. API สำหรับส่งข้อมูลให้หน้าเว็บ Dashboard
+// ==========================================
+app.get('/api/data', async (req, res) => {
+  const userId = req.query.userId; // รับรหัสคนเปิดเว็บ
+  
+  if (!userId) {
+    return res.status(400).json({ error: 'ไม่พบรหัสผู้ใช้งาน' });
+  }
+
+  // ดึงข้อมูลทั้งหมดของคนๆ นี้จาก Supabase
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false }); // เรียงจากใหม่ไปเก่า
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  // ส่งข้อมูลกลับไปให้หน้าเว็บ
+  res.json(data);
+});
 
 const PORT = 3000;
 app.listen(PORT, () => {
