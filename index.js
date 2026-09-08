@@ -16,6 +16,7 @@ const client = new line.messagingApi.MessagingApiClient({
 });
 
 const app = express();
+app.use(express.static('public')); // 💡 เพิ่มบรรทัดนี้ เพื่อบอกให้ระบบรู้จักโฟลเดอร์ public
 
 // สร้าง Endpoint รอรับ Webhook (ใช้ Middleware ของ LINE ช่วยตรวจสอบความปลอดภัย)
 app.post('/webhook', line.middleware(config), (req, res) => {
