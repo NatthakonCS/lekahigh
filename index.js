@@ -115,6 +115,7 @@ async function handleEvent(event) {
   // 2. ดักจับการกดปุ่ม (Event ประเภท Postback)
   // ==========================================
   if (event.type === 'postback') {
+    const userId = event.source.userId;
     // ดึงก้อนข้อมูลลับที่เราฝังไว้ในปุ่มออกมา
     const postbackData = event.postback.data; 
     
@@ -131,7 +132,7 @@ async function handleEvent(event) {
       const { data, error } = await supabase
         .from('transactions')
         .insert([
-          { amount: parseInt(amount), wallet_type: wallet }
+          { amount: parseInt(amount), wallet_type: wallet , user_id: userId }
         ]);
 
       if (error) {
