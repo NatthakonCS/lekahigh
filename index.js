@@ -29,30 +29,78 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 });
 
 // ฟังก์ชันแยกประเภท Event ที่ LINE ส่งมา
-// ฟังก์ชันแยกประเภท Event ที่ LINE ส่งมา
 async function handleEvent(event) {
   
 
-  // 1. ดักจับข้อความที่พิมพ์มา (ตรวจสอบให้เป็นตัวเลขเท่านั้น)
+  // ==========================================
+  // 1. ดักจับข้อความที่พิมพ์มา (ตัวเลข หรือ คำสั่ง)
   // ==========================================
   if (event.type === 'message' && event.message.type === 'text') {
-    const text = event.message.text.trim(); // รับข้อความและตัดช่องว่างหัวท้ายทิ้ง
+    const text = event.message.text.trim(); 
+    const userId = event.source.userId; // ดึงรหัสคนใช้งาน
 
-    // 💡 [เช็กตัวเลข] ถ้าไม่ใช่ตัวเลข (isNaN) หรือพิมพ์มาแต่ช่องว่างเปล่าๆ
+    // 💡 ฟีเจอร์ใหม่: ถ้าพิมพ์คำว่า "สรุป"
+    if (text === 'สรุป') {
+      // หาวันที่ของวันนี้ เพื่อเอาไปฟิลเตอร์ข้อมูล
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startOfDay = today.toISOString();
+      today.setHours(23, 59, 59, 999);
+      const endOfDay = today.toISOString();
+
+      // ดึงข้อมูลจาก Supabase (เฉพาะของ user คนนี้ และเฉพาะวันนี้)
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+
+      if (error) {
+        console.error(error);
+        return client.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{ type: 'text', text: '❌ ดึงข้อมูลสรุปไม่ได้ครับ ลองใหม่อีกครั้งนะ' }]
+        });
+      }
+
+      // นำข้อมูลมาบวกเลขแยกตามกระเป๋า
+      let pIncome = 0, pExpense = 0; // ส่วนตัว
+      let bIncome = 0, bExpense = 0; // ร้านค้า
+
+      data.forEach(item => {
+        if (item.wallet_type === 'personal') {
+          if (item.category === 'รายรับ') pIncome += item.amount;
+          else pExpense += item.amount; // รวมค่าอาหาร, ค่าเดินทาง
+        } else if (item.wallet_type === 'business') {
+          if (item.category === 'รายรับ') bIncome += item.amount;
+          else bExpense += item.amount; // รวมรายจ่าย, ต้นทุน
+        }
+      });
+
+      // จัดข้อความเพื่อตอบกลับ
+      const summaryText = `📊 สรุปยอดวันนี้\n\n🏠 ส่วนตัว\nรายรับ: ${pIncome} ฿\nรายจ่าย: ${pExpense} ฿\nคงเหลือ: ${pIncome - pExpense} ฿\n\n🏢 ร้านค้า\nรายรับ: ${bIncome} ฿\nรายจ่าย: ${bExpense} ฿\nคงเหลือ: ${bIncome - bExpense} ฿`;
+
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: summaryText }]
+      });
+    }
+
+    // 💡 [เช็กตัวเลข] ถ้าไม่ใช่คำสั่ง "สรุป" และไม่ใช่ตัวเลข ให้เตือน
     if (isNaN(text) || text === "") {
-      // ให้บอตตอบกลับไปเตือน แล้วจบการทำงานทันที (return)
       return client.replyMessage({
         replyToken: event.replyToken,
         messages: [{ 
           type: 'text', 
-          text: '❌ กรุณาพิมพ์เฉพาะ "ตัวเลข" ยอดเงินที่ต้องการบันทึกนะครับ 😅' 
+          text: '❌ กรุณาพิมพ์ "ตัวเลข" เพื่อบันทึกยอด หรือพิมพ์ "สรุป" เพื่อดูยอดวันนี้นะครับ' 
         }],
       });
     }
 
-    // ถ้าผ่านด่านข้างบนมาได้ แปลว่าเป็นตัวเลขชัวร์ๆ ค่อยให้แสดงปุ่ม Flex Message
+    // ถ้าพิมพ์ตัวเลขมา ให้แสดง Flex Message เลือกกระเป๋าตามปกติ
     const amount = text; 
-    
+
     const flexMessage = {
       type: 'flex',
       altText: 'เลือกกระเป๋าเพื่อบันทึกยอด',
