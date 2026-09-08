@@ -32,10 +32,7 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 // ฟังก์ชันแยกประเภท Event ที่ LINE ส่งมา
 async function handleEvent(event) {
   
-  // ==========================================
-  // 1. ดักจับข้อความที่พิมพ์มา (สมมติว่าพิมพ์ยอดเงิน)
-  // ==========================================
-  // ==========================================
+
   // 1. ดักจับข้อความที่พิมพ์มา (ตรวจสอบให้เป็นตัวเลขเท่านั้น)
   // ==========================================
   if (event.type === 'message' && event.message.type === 'text') {
@@ -83,7 +80,7 @@ async function handleEvent(event) {
                 type: 'postback',
                 label: '🏠 ส่วนตัว',
                 // ตรงนี้คือการฝังข้อมูลลับไว้หลังปุ่ม!
-                data: `action=save&wallet=personal&amount=${amount}`, 
+                data: `action=category&wallet=personal&amount=${amount}`, 
                 displayText: 'บันทึกเข้าส่วนตัว' // คำที่จะเด้งขึ้นแชทตอนกดปุ่ม
               }
             },
@@ -95,7 +92,7 @@ async function handleEvent(event) {
                 type: 'postback',
                 label: '🏢 ร้านค้า',
                 // ฝังข้อมูลของร้านค้า
-                data: `action=save&wallet=business&amount=${amount}`,
+                data: `action=category&wallet=business&amount=${amount}`,
                 displayText: 'บันทึกเข้าร้านค้า'
               }
             }
@@ -112,47 +109,104 @@ async function handleEvent(event) {
   }
 
   // ==========================================
-  // 2. ดักจับการกดปุ่ม (Event ประเภท Postback)
-  // ==========================================
-  if (event.type === 'postback') {
-    const userId = event.source.userId;
-    // ดึงก้อนข้อมูลลับที่เราฝังไว้ในปุ่มออกมา
-    const postbackData = event.postback.data; 
-    
-    // แปลงก้อนข้อมูลให้อ่านง่ายขึ้น (เช่น action=save&wallet=personal&amount=500)
-    const params = new URLSearchParams(postbackData);
-    const action = params.get('action');
-    const wallet = params.get('wallet');
-    const amount = params.get('amount');
-
-    if (action === 'save') {
-      const walletName = wallet === 'personal' ? '🏠 ส่วนตัว' : '🏢 ร้านค้า';
+    // 2. ดักจับการกดปุ่ม (Event ประเภท Postback)
+    // ==========================================
+    if (event.type === 'postback') {
+      const userId = event.source.userId; // ดึงรหัสคนใช้งาน
+      const postbackData = event.postback.data; 
       
-      // โยนข้อมูลลง Database
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert([
-          { amount: parseInt(amount), wallet_type: wallet , user_id: userId }
-        ]);
+      const params = new URLSearchParams(postbackData);
+      const action = params.get('action');
+      const wallet = params.get('wallet');
+      const amount = params.get('amount');
+      const category = params.get('category'); // รับค่าหมวดหมู่เพิ่มมา
 
-      if (error) {
-        console.error('เกิดข้อผิดพลาด:', error);
+      // สเต็ป 2.1: ถ้าเพิ่งกดเลือกกระเป๋ามา ให้เด้งถามหมวดหมู่ต่อ
+      if (action === 'category') {
+        const categoryFlex = {
+          type: 'flex',
+          altText: 'เลือกหมวดหมู่',
+          contents: {
+            type: 'bubble',
+            body: {
+              type: 'box', layout: 'vertical',
+              contents: [
+                { type: 'text', text: `ยอด ${amount} บาท`, weight: 'bold', size: 'xl' },
+                { type: 'text', text: 'เป็นค่าอะไรเอ่ย?', margin: 'md' }
+              ]
+            },
+            footer: {
+              type: 'box', layout: 'vertical', spacing: 'sm',
+              contents: [
+                { // ปุ่มรายรับ
+                  type: 'button', style: 'primary', color: '#4CAF50',
+                  action: {
+                    type: 'postback', label: '💰 รายรับ',
+                    // ส่งข้อมูลทั้งหมดไปเซฟ!
+                    data: `action=save&wallet=${wallet}&amount=${amount}&category=รายรับ`, 
+                    displayText: 'รายรับ'
+                  }
+                },
+                { // ปุ่มค่าอาหาร
+                  type: 'button', style: 'secondary',
+                  action: {
+                    type: 'postback', label: '🍜 ค่าอาหาร',
+                    data: `action=save&wallet=${wallet}&amount=${amount}&category=ค่าอาหาร`,
+                    displayText: 'ค่าอาหาร'
+                  }
+                },
+                { // ปุ่มค่าเดินทาง
+                  type: 'button', style: 'secondary',
+                  action: {
+                    type: 'postback', label: '🚗 ค่าเดินทาง',
+                    data: `action=save&wallet=${wallet}&amount=${amount}&category=ค่าเดินทาง`,
+                    displayText: 'ค่าเดินทาง'
+                  }
+                }
+              ]
+            }
+          }
+        };
+
         return client.replyMessage({
           replyToken: event.replyToken,
-          messages: [{ type: 'text', text: '❌ ระบบมีปัญหา บันทึกข้อมูลไม่ได้ครับ' }]
+          messages: [categoryFlex],
         });
       }
 
-      // ถ้าบันทึกสำเร็จ ให้ตอบกลับ
-      return client.replyMessage({
-        replyToken: event.replyToken,
-        messages: [{
-          type: 'text',
-          text: `✅ บันทึกยอด ${amount} บาท เข้ากระเป๋า ${walletName} ลงระบบเรียบร้อยแล้วครับ!`
-        }],
-      });
+      // สเต็ป 2.2: พอกดเลือกหมวดหมู่เสร็จ ค่อยเอาลง Database
+      if (action === 'save') {
+        const walletName = wallet === 'personal' ? '🏠 ส่วนตัว' : '🏢 ร้านค้า';
+        
+        // บันทึกลง Supabase (เพิ่ม user_id และ category เข้าไปแล้ว)
+        const { error } = await supabase
+          .from('transactions')
+          .insert([
+            { 
+              amount: parseInt(amount), 
+              wallet_type: wallet,
+              category: category,
+              user_id: userId
+            }
+          ]);
+
+        if (error) {
+          console.error(error);
+          return client.replyMessage({
+            replyToken: event.replyToken,
+            messages: [{ type: 'text', text: '❌ ระบบมีปัญหา บันทึกข้อมูลไม่ได้ครับ' }]
+          });
+        }
+
+        return client.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{
+            type: 'text',
+            text: `✅ บันทึก ${category} ยอด ${amount} บาท เข้ากระเป๋า ${walletName} เรียบร้อย!`
+          }],
+        });
+      }
     }
-  }
 
   // ถ้าเป็น Event อื่นๆ ที่ไม่ได้เขียนดักไว้ ก็ให้ปล่อยผ่าน
   return Promise.resolve(null);
