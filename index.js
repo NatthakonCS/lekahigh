@@ -17,6 +17,8 @@ const client = new line.messagingApi.MessagingApiClient({
 
 const app = express();
 app.use(express.static('public')); // 💡 เพิ่มบรรทัดนี้ เพื่อบอกให้ระบบรู้จักโฟลเดอร์ public
+const cors = require('cors');
+app.use(cors()); // อนุญาตให้ Netlify หรือเว็บอื่นๆ มาดึงข้อมูล API ได้
 
 // สร้าง Endpoint รอรับ Webhook (ใช้ Middleware ของ LINE ช่วยตรวจสอบความปลอดภัย)
 app.post('/webhook', line.middleware(config), (req, res) => {
