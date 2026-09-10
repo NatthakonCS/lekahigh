@@ -271,26 +271,36 @@
             if (dayData.length === 0) {
                 list.innerHTML = `<p class="text-gray-500 text-sm text-center py-8">ไม่มีรายการใช้จ่ายในวันนี้</p>`;
             } else {
-                dayData.forEach(item => {
-                    const isIncome = item.category === 'รายรับ';
-                    const textColor = isIncome ? 'text-[#00E676]' : 'text-[#FF5252]';
-                    const sign = isIncome ? '+' : '-';
-                    const timeStr = new Date(item.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+                // --- แก้ไขในฟังก์ชัน renderHistory ---
+            data.forEach(item => {
+                const isIncome = item.category === 'รายรับ';
+                const textColor = isIncome ? 'text-[#00E676]' : 'text-[#FF5252]';
+                const sign = isIncome ? '+' : '-';
+                const icon = item.wallet_type === 'personal' ? '🏠' : '🏢';
+                const d = new Date(item.created_at);
+                const dateStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()+543} ${d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
 
-                    list.innerHTML += `
-                        <div class="flex justify-between items-center bg-[#121212] p-3 rounded-xl border border-[#27272A]">
+                // 💡 ดึงโน้ตมาตรวจสอบ ถ้าไม่มีให้เว้นว่างไว้
+                const noteText = item.note ? ` <span class="text-xs font-normal text-gray-400">(${item.note})</span>` : '';
+
+                list.innerHTML += `
+                    <div class="flex justify-between items-center bg-[#18181B] p-3 rounded-xl border border-[#27272A]">
+                        <div class="flex items-center gap-3">
+                            <div class="text-xl">${icon}</div>
                             <div>
-                                <p class="font-semibold text-gray-200 text-sm">${item.category}</p>
-                                <p class="text-[10px] text-gray-500">${timeStr}</p>
+                                <!-- เพิ่มตัวแปร noteText ต่อท้ายหมวดหมู่ตรงนี้ครับ -->
+                                <p class="font-semibold text-gray-200 text-sm">${item.category}${noteText}</p>
+                                <p class="text-[10px] text-gray-500">${dateStr}</p>
                             </div>
-                            <div class="flex items-center gap-3">
-                                <div class="font-bold text-sm ${textColor}">${sign}${item.amount.toLocaleString()} ฿</div>
-                                <button onclick="deleteTransaction(${item.id}); closeDayModal();" class="text-gray-500 hover:text-red-500 p-1">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        </div>`;
-                });
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="font-bold text-sm ${textColor}">${sign}${item.amount.toLocaleString()} ฿</div>
+                            <button onclick="deleteTransaction(${item.id})" class="text-gray-500 hover:text-red-500 p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </div>`;
+            });
             }
 
             const modal = document.getElementById('dayModal');
@@ -312,6 +322,7 @@
             list.innerHTML = '';
             if(data.length === 0) { list.innerHTML = `<p class="text-gray-500 text-sm text-center py-4">ไม่มีรายการในเดือนนี้</p>`; return; }
 
+            // --- แก้ไขในฟังก์ชัน renderHistory ---
             data.forEach(item => {
                 const isIncome = item.category === 'รายรับ';
                 const textColor = isIncome ? 'text-[#00E676]' : 'text-[#FF5252]';
@@ -320,12 +331,16 @@
                 const d = new Date(item.created_at);
                 const dateStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()+543} ${d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
 
+                // 💡 ดึงโน้ตมาตรวจสอบ ถ้าไม่มีให้เว้นว่างไว้
+                const noteText = item.note ? ` <span class="text-xs font-normal text-gray-400">(${item.note})</span>` : '';
+
                 list.innerHTML += `
                     <div class="flex justify-between items-center bg-[#18181B] p-3 rounded-xl border border-[#27272A]">
                         <div class="flex items-center gap-3">
                             <div class="text-xl">${icon}</div>
                             <div>
-                                <p class="font-semibold text-gray-200 text-sm">${item.category}</p>
+                                <!-- เพิ่มตัวแปร noteText ต่อท้ายหมวดหมู่ตรงนี้ครับ -->
+                                <p class="font-semibold text-gray-200 text-sm">${item.category}${noteText}</p>
                                 <p class="text-[10px] text-gray-500">${dateStr}</p>
                             </div>
                         </div>

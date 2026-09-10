@@ -153,46 +153,14 @@ async function handleEvent(event) {
       }
     } 
     // -- ถ้าพิมพ์มาไม่มีตัวเลข (แก้ข้อความตามที่พี่สั่ง) --
-    if (text === 'สรุป' || text === 'สรุปยอด') {
-      // ... (โค้ดสรุปยอดเดิมของพี่) ...
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: summaryText }] });
-    }
-
-    // 🟢 แทรกฟีเจอร์ "วิธีใช้" ตรงนี้เลยครับ 🟢
-    else if (text === 'วิธีใช้' || text === 'คู่มือ') {
-      const helpFlex = {
-        type: 'flex',
-        altText: 'คู่มือการใช้งาน CASHFLOW',
-        contents: {
-          type: 'bubble',
-          size: 'mega',
-          header: {
-            type: 'box', layout: 'vertical', backgroundColor: '#00E676',
-            contents: [
-              { type: 'text', text: '💡 คู่มือการบันทึกบัญชี', weight: 'bold', color: '#121212', size: 'lg', align: 'center' }
-            ]
-          },
-          body: {
-            type: 'box', layout: 'vertical', spacing: 'md', backgroundColor: '#1E1E23',
-            contents: [
-              { type: 'text', text: 'วิธีพิมพ์เพื่อบันทึกรายการ', weight: 'bold', color: '#ffffff', size: 'sm' },
-              { type: 'separator', color: '#2A2A30' },
-              
-              { type: 'text', text: '🔴 บันทึกรายจ่าย:', color: '#A1A1AA', size: 'xs', margin: 'md' },
-              { type: 'text', text: 'พิมพ์ "ตัวเลข" ตามด้วย "ชื่อรายการ"', color: '#00E676', size: 'sm', wrap: true },
-              { type: 'text', text: 'ตัวอย่าง: 150 ค่ากาแฟ', color: '#ffffff', size: 'xs', wrap: true },
-              
-              { type: 'text', text: '🟢 บันทึกรายรับ:', color: '#A1A1AA', size: 'xs', margin: 'md' },
-              { type: 'text', text: 'พิมพ์ "+" นำหน้าตัวเลข', color: '#00E676', size: 'sm', wrap: true },
-              { type: 'text', text: 'ตัวอย่าง: +5000 เงินเดือน', color: '#ffffff', size: 'xs', wrap: true },
-              
-              { type: 'text', text: '📊 ดูสรุปยอดรวม:', color: '#A1A1AA', size: 'xs', margin: 'md' },
-              { type: 'text', text: 'พิมพ์คำว่า "สรุป"', color: '#00E676', size: 'sm', wrap: true }
-            ]
-          }
-        }
-      };
-      return client.replyMessage({ replyToken: event.replyToken, messages: [helpFlex] });
+    else if (text !== 'วิธีใช้') {
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ 
+          type: 'text', 
+          text: '💡 กรุณาพิมพ์ตัวเลขเพื่อบันทึกยอดครับ (เช่น "100 เสื้อ" หรือ "+500") หรือพิมพ์ "สรุป" เพื่อดูยอดเดือนนี้นะครับ' 
+        }]
+      });
     }
   }
 
@@ -236,28 +204,53 @@ async function handleEvent(event) {
     }
 
     // 2.2.2 บันทึกลง Database
-    else if (action === 'save_tx') {
-      const category = params.get('c');
-      await supabase.from('transactions').insert([{
-        user_id: userId,
-        amount: amount,
-        category: category,
-        wallet_type: wallet,
-        note: note || '' // เซฟโน้ตลง DB
+    else // สเต็ปบันทึกและเช็กลิมิต
+    if (action === 'save' || action === 'save_tx') {
+      // 1. บันทึกลง Database (พร้อม Note)
+      await supabase.from('transactions').insert([{ 
+        amount: amount, 
+        wallet_type: wallet, 
+        category: category, 
+        user_id: userId, 
+        note: note || '' 
       }]);
-
+      
+      // เตรียมข้อมูลตัวแปรสำหรับแสดงผลข้อความ
       const isIncome = category === 'รายรับ';
-      const emoji = isIncome ? '🟢' : '🔴';
       const typeName = isIncome ? 'รายรับ' : 'รายจ่าย';
+      const emoji = isIncome ? '🟢' : '🔴';
       const walletIcon = wallet === 'personal' ? '🏠 ส่วนตัว' : '🏢 ร้านค้า';
 
-      return client.replyMessage({
-        replyToken: event.replyToken,
-        messages: [{
-          type: 'text',
-          text: `✅ บันทึก${typeName}สำเร็จ!\n${emoji} จำนวน: ฿${amount.toLocaleString()}\n💼 กระเป๋า: ${walletIcon}\n📂 หมวด: ${category}\n📝 โน้ต: ${note || '-'}`
-        }]
-      });
+      // ข้อความโชว์ตามที่พี่ต้องการเป๊ะๆ
+      let replyMsg = `✅ บันทึก${typeName}สำเร็จ!\n${emoji} จำนวน: ฿${amount.toLocaleString()}\n💼 กระเป๋า: ${walletIcon}\n📂 หมวด: ${category}\n📝 โน้ต: ${note || '-'}`;
+
+      // 2. ระบบแจ้งเตือนลิมิตโควตา (เตือนเฉพาะตอนใช้เกิน)
+      if (category !== 'รายรับ') {
+        const { data: limitData } = await supabase.from('user_categories')
+          .select('monthly_limit')
+          .eq('user_id', userId)
+          .eq('wallet_type', wallet)
+          .eq('category_name', category)
+          .single();
+        
+        if (limitData && limitData.monthly_limit > 0) {
+          const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+          const { data: txData } = await supabase.from('transactions')
+            .select('amount')
+            .eq('user_id', userId)
+            .eq('wallet_type', wallet)
+            .eq('category', category)
+            .gte('created_at', startOfMonth);
+          
+          const currentTotal = txData.reduce((sum, item) => sum + item.amount, 0);
+          
+          // 🔥 แทรกคำเตือนใน LINE เฉพาะตอนใช้เงินเกินลิมิตเท่านั้น
+          if (currentTotal > limitData.monthly_limit) {
+            replyMsg += `\n\n🚨 แจ้งเตือน!: หมวด "${category}" ทะลุโควตา ${limitData.monthly_limit.toLocaleString()} บาทแล้ว! (ยอดปัจจุบัน: ${currentTotal.toLocaleString()} บาท)`;
+          }
+        }
+      }
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: replyMsg }] });
     }
   }
 
