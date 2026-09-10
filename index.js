@@ -153,14 +153,46 @@ async function handleEvent(event) {
       }
     } 
     // -- ถ้าพิมพ์มาไม่มีตัวเลข (แก้ข้อความตามที่พี่สั่ง) --
-    else if (text !== 'วิธีใช้') {
-      return client.replyMessage({
-        replyToken: event.replyToken,
-        messages: [{ 
-          type: 'text', 
-          text: '❌ กรุณาพิมพ์ตัวเลขเพื่อบันทึกยอดครับ (เช่น "100 เสื้อ" หรือ "+500") หรือพิมพ์ "สรุป" เพื่อดูยอดเดือนนี้นะครับ' 
-        }]
-      });
+    if (text === 'สรุป' || text === 'สรุปยอด') {
+      // ... (โค้ดสรุปยอดเดิมของพี่) ...
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: summaryText }] });
+    }
+
+    // 🟢 แทรกฟีเจอร์ "วิธีใช้" ตรงนี้เลยครับ 🟢
+    else if (text === 'วิธีใช้' || text === 'คู่มือ') {
+      const helpFlex = {
+        type: 'flex',
+        altText: 'คู่มือการใช้งาน CASHFLOW',
+        contents: {
+          type: 'bubble',
+          size: 'mega',
+          header: {
+            type: 'box', layout: 'vertical', backgroundColor: '#00E676',
+            contents: [
+              { type: 'text', text: '💡 คู่มือการบันทึกบัญชี', weight: 'bold', color: '#121212', size: 'lg', align: 'center' }
+            ]
+          },
+          body: {
+            type: 'box', layout: 'vertical', spacing: 'md', backgroundColor: '#1E1E23',
+            contents: [
+              { type: 'text', text: 'วิธีพิมพ์เพื่อบันทึกรายการ', weight: 'bold', color: '#ffffff', size: 'sm' },
+              { type: 'separator', color: '#2A2A30' },
+              
+              { type: 'text', text: '🔴 บันทึกรายจ่าย:', color: '#A1A1AA', size: 'xs', margin: 'md' },
+              { type: 'text', text: 'พิมพ์ "ตัวเลข" ตามด้วย "ชื่อรายการ"', color: '#00E676', size: 'sm', wrap: true },
+              { type: 'text', text: 'ตัวอย่าง: 150 ค่ากาแฟ', color: '#ffffff', size: 'xs', wrap: true },
+              
+              { type: 'text', text: '🟢 บันทึกรายรับ:', color: '#A1A1AA', size: 'xs', margin: 'md' },
+              { type: 'text', text: 'พิมพ์ "+" นำหน้าตัวเลข', color: '#00E676', size: 'sm', wrap: true },
+              { type: 'text', text: 'ตัวอย่าง: +5000 เงินเดือน', color: '#ffffff', size: 'xs', wrap: true },
+              
+              { type: 'text', text: '📊 ดูสรุปยอดรวม:', color: '#A1A1AA', size: 'xs', margin: 'md' },
+              { type: 'text', text: 'พิมพ์คำว่า "สรุป"', color: '#00E676', size: 'sm', wrap: true }
+            ]
+          }
+        }
+      };
+      return client.replyMessage({ replyToken: event.replyToken, messages: [helpFlex] });
     }
   }
 
