@@ -165,48 +165,65 @@ async function handleEvent(event) {
   }
 
   // 🟢 2.2 กรณีผู้ใช้ "กดปุ่ม (Quick Reply / Flex)"
+  // 🟢 2.2 ดักจับการกดปุ่ม (Event ประเภท Postback)
   if (event.type === 'postback') {
     const params = new URLSearchParams(event.postback.data);
-    const action = params.get('a');
-    const amount = parseFloat(params.get('m'));
-    const wallet = params.get('w');
-    const note = params.get('n');
+    
+    // 🔥 แก้ปัญหาปุ่มค้าง: ดักจับชื่อตัวแปรทั้งแบบเก่าและแบบใหม่ 
+    const action = params.get('action') || params.get('a');
+    const wallet = params.get('wallet') || params.get('w');
+    const amount = parseFloat(params.get('amount') || params.get('m'));
+    const category = params.get('cat') || params.get('category') || params.get('c');
+    const note = params.get('note') || params.get('n');
 
-    // 2.2.1 ถามหมวดหมู่
-    if (action === 'ask_cat') {
-      const { data: cats } = await supabase.from('user_categories').select('category_name').eq('user_id', userId).eq('wallet_type', wallet);
-      
-      let catNames = [];
-      if (cats && cats.length > 0) {
-        catNames = cats.map(c => c.category_name).filter(c => c !== 'รายรับ').slice(0, 13);
-      } 
-      if (catNames.length === 0) catNames = ['อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'ทั่วไป'];
+    // ----------------------------------------------------
+    // สเต็ปที่ 1: กดเลือกกระเป๋า -> เด้งถามหมวดหมู่
+    // ----------------------------------------------------
+    if (action === 'category' || action === 'ask_cat') {
+      let { data: cats } = await supabase.from('user_categories').select('*').eq('user_id', userId).eq('wallet_type', wallet);
 
-      const catButtons = catNames.map(c => ({
-        type: 'action',
-        action: {
-          type: 'postback',
-          label: `📂 ${c.length > 18 ? c.substring(0,18) : c}`, 
-          data: `a=save_tx&m=${amount}&w=${wallet}&c=${c}&n=${note}`,
-          displayText: `เลือกหมวด: ${c}`
+      if (!cats || cats.length === 0) {
+        const defaultCats = wallet === 'business' 
+          ? [{user_id: userId, wallet_type: wallet, category_name: 'รายรับ', monthly_limit: 0}, {user_id: userId, wallet_type: wallet, category_name: 'รายจ่าย', monthly_limit: 0}]
+          : [{user_id: userId, wallet_type: wallet, category_name: 'รายรับ', monthly_limit: 0}, {user_id: userId, wallet_type: wallet, category_name: 'ค่าอาหาร', monthly_limit: 5000}];
+        await supabase.from('user_categories').insert(defaultCats);
+        cats = defaultCats;
+      }
+
+      const expenseCats = cats.filter(c => c.category_name !== 'รายรับ').slice(0, 5);
+
+      const categoryButtons = expenseCats.map(c => ({
+        type: 'button', style: 'secondary',
+        action: { 
+          type: 'postback', 
+          label: c.category_name, 
+          data: `action=save&wallet=${wallet}&amount=${amount}&cat=${c.category_name}&note=${note}`, 
+          displayText: `เลือกหมวด: ${c.category_name}` 
         }
       }));
 
-      const walletIcon = wallet === 'personal' ? '🏠' : '🏢';
-      return client.replyMessage({
-        replyToken: event.replyToken,
-        messages: [{
-          type: 'text',
-          text: `${walletIcon} เลือกหมวดหมู่สำหรับยอด ฿${amount.toLocaleString()} ครับ`,
-          quickReply: { items: catButtons }
-        }]
-      });
+      const categoryFlex = {
+        type: 'flex', altText: 'เลือกหมวดหมู่',
+        contents: {
+          type: 'bubble',
+          body: {
+            type: 'box', layout: 'vertical',
+            contents: [
+              { type: 'text', text: `ยอด ${amount} บาท`, weight: 'bold', size: 'xl' },
+              { type: 'text', text: `📝 ${note || '-'}`, size: 'sm', color: '#888888', margin: 'md' },
+              { type: 'text', text: 'หมวดหมู่ไหนดีครับ?', margin: 'md', color: '#666666' }
+            ]
+          },
+          footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: categoryButtons }
+        }
+      };
+      return client.replyMessage({ replyToken: event.replyToken, messages: [categoryFlex] });
     }
 
-    // 2.2.2 บันทึกลง Database
-    else // สเต็ปบันทึกและเช็กลิมิต
+    // ----------------------------------------------------
+    // สเต็ปที่ 2: กดเลือกหมวดหมู่ -> บันทึกและแจ้งเตือน
+    // ----------------------------------------------------
     if (action === 'save' || action === 'save_tx') {
-      // 1. บันทึกลง Database (พร้อม Note)
       await supabase.from('transactions').insert([{ 
         amount: amount, 
         wallet_type: wallet, 
@@ -215,16 +232,14 @@ async function handleEvent(event) {
         note: note || '' 
       }]);
       
-      // เตรียมข้อมูลตัวแปรสำหรับแสดงผลข้อความ
       const isIncome = category === 'รายรับ';
       const typeName = isIncome ? 'รายรับ' : 'รายจ่าย';
       const emoji = isIncome ? '🟢' : '🔴';
       const walletIcon = wallet === 'personal' ? '🏠 ส่วนตัว' : '🏢 ร้านค้า';
 
-      // ข้อความโชว์ตามที่พี่ต้องการเป๊ะๆ
+      // ข้อความโชว์สวยงามตามที่พี่ต้องการ
       let replyMsg = `✅ บันทึก${typeName}สำเร็จ!\n${emoji} จำนวน: ฿${amount.toLocaleString()}\n💼 กระเป๋า: ${walletIcon}\n📂 หมวด: ${category}\n📝 โน้ต: ${note || '-'}`;
 
-      // 2. ระบบแจ้งเตือนลิมิตโควตา (เตือนเฉพาะตอนใช้เกิน)
       if (category !== 'รายรับ') {
         const { data: limitData } = await supabase.from('user_categories')
           .select('monthly_limit')
@@ -244,7 +259,7 @@ async function handleEvent(event) {
           
           const currentTotal = txData.reduce((sum, item) => sum + item.amount, 0);
           
-          // 🔥 แทรกคำเตือนใน LINE เฉพาะตอนใช้เงินเกินลิมิตเท่านั้น
+          // เตือนแค่ตอนใช้ทะลุเป้า
           if (currentTotal > limitData.monthly_limit) {
             replyMsg += `\n\n🚨 แจ้งเตือน!: หมวด "${category}" ทะลุโควตา ${limitData.monthly_limit.toLocaleString()} บาทแล้ว! (ยอดปัจจุบัน: ${currentTotal.toLocaleString()} บาท)`;
           }
