@@ -21,14 +21,162 @@ const cors = require('cors');
 app.use(cors()); // อนุญาตให้ Netlify หรือเว็บอื่นๆ มาดึงข้อมูล API ได้
 
 // สร้าง Endpoint รอรับ Webhook (ใช้ Middleware ของ LINE ช่วยตรวจสอบความปลอดภัย)
-app.post('/webhook', line.middleware(config), (req, res) => {
-  Promise
-    .all(req.body.events.map(handleEvent))
-    .then((result) => res.json(result))
-    .catch((err) => {
-      console.error(err);
-      res.status(500).end();
-    });
+// ==========================================
+// 6. ระบบแชทบอต (LINE Webhook) - อัปเกรดฉลาด 100%
+// ==========================================
+app.post('/webhook', express.json(), async (req, res) => {
+    const events = req.body.events;
+    if (!events || events.length === 0) return res.status(200).send('OK');
+
+    for (const event of events) {
+        const userId = event.source.userId;
+        const LINE_TOKEN = process.env.LINE_ACCESS_TOKEN; 
+
+        // ฟังก์ชันช่วยส่งข้อความ LINE
+        const replyMessage = async (replyToken, payload) => {
+            try {
+                await fetch('https://api.line.me/v2/bot/message/reply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}` },
+                    body: JSON.stringify({ replyToken: replyToken, messages: [payload] })
+                });
+            } catch (err) { console.error("LINE Reply Error:", err); }
+        };
+
+        // 🟢 1. กรณีผู้ใช้ "กดปุ่ม (Quick Reply)"
+        if (event.type === 'postback') {
+            const params = new URLSearchParams(event.postback.data);
+            const action = params.get('a');
+            const amount = parseFloat(params.get('m'));
+            const wallet = params.get('w');
+            const note = params.get('n');
+
+            // 1.1 ถ้ากดเลือกกระเป๋าแล้ว -> เด้งปุ่มถามหมวดหมู่ต่อ (ดึงจากฐานข้อมูลจริง)
+            if (action === 'ask_cat') {
+                // ดึงหมวดหมู่จาก Supabase ตามกระเป๋าที่เลือก
+                const { data: cats } = await supabase.from('categories').select('category_name').eq('userId', userId).eq('wallet_type', wallet);
+                
+                let catNames = [];
+                if (cats && cats.length > 0) {
+                    // เอาเฉพาะรายจ่าย และจำกัดแค่ 13 ปุ่ม (ตามข้อจำกัด LINE)
+                    catNames = cats.map(c => c.category_name).filter(c => c !== 'รายรับ').slice(0, 13);
+                } 
+                if (catNames.length === 0) catNames = ['อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'ทั่วไป']; // ค่าเริ่มต้นถ้ายังไม่ได้ตั้งค่า
+
+                const catButtons = catNames.map(c => ({
+                    type: 'action',
+                    action: {
+                        type: 'postback',
+                        label: `📂 ${c.length > 18 ? c.substring(0,18) : c}`, 
+                        data: `a=save_tx&m=${amount}&w=${wallet}&c=${c}&n=${note}`,
+                        displayText: `เลือกหมวด: ${c}`
+                    }
+                }));
+
+                const walletIcon = wallet === 'personal' ? '🏠' : '🏢';
+                await replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: `${walletIcon} เลือกหมวดหมู่สำหรับยอด ฿${amount.toLocaleString()} ครับ`,
+                    quickReply: { items: catButtons }
+                });
+            }
+            
+            // 1.2 ถ้ากดเลือกหมวดหมู่เสร็จแล้ว (หรือเป็นรายรับ) -> บันทึกลงฐานข้อมูลเลย
+            else if (action === 'save_tx') {
+                const category = params.get('c');
+                const { error } = await supabase.from('transactions').insert([{
+                    userId: userId,
+                    amount: amount,
+                    category: category,
+                    wallet_type: wallet,
+                    note: note
+                }]);
+
+                const isIncome = category === 'รายรับ';
+                const emoji = isIncome ? '🟢' : '🔴';
+                const typeName = isIncome ? 'รายรับ' : 'รายจ่าย';
+                const walletIcon = wallet === 'personal' ? '🏠 ส่วนตัว' : '🏢 ร้านค้า';
+
+                await replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: `✅ บันทึก${typeName}สำเร็จ!\n${emoji} จำนวน: ฿${amount.toLocaleString()}\n💼 กระเป๋า: ${walletIcon}\n📂 หมวดหมู่: ${category}\n📝 โน้ต: ${note || '-'}`
+                });
+            }
+        }
+
+        // 🟢 2. กรณีผู้ใช้ "พิมพ์ข้อความ" (ดักจับตัวเลขและโน้ตแบบฉลาด)
+        else if (event.type === 'message' && event.message.type === 'text') {
+            const text = event.message.text.trim();
+
+            if (text === 'สรุป' || text === 'สรุปยอด') {
+                const now = new Date();
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+                const { data } = await supabase.from('transactions').select('*').eq('userId', userId).gte('created_at', startOfMonth);
+                let incP = 0, expP = 0, incB = 0, expB = 0;
+                if (data) {
+                    data.forEach(item => {
+                        if (item.wallet_type === 'personal') { item.category === 'รายรับ' ? incP += item.amount : expP += item.amount; }
+                        else { item.category === 'รายรับ' ? incB += item.amount : expB += item.amount; }
+                    });
+                }
+                await replyMessage(event.replyToken, { 
+                    type: 'text', 
+                    text: `📊 สรุปยอดเดือนนี้\n\n🏠 ส่วนตัว\nรับ: ฿${incP.toLocaleString()} | จ่าย: ฿${expP.toLocaleString()}\nสุทธิ: ฿${(incP - expP).toLocaleString()}\n\n🏢 ร้านค้า\nรับ: ฿${incB.toLocaleString()} | จ่าย: ฿${expB.toLocaleString()}\nสุทธิ: ฿${(incB - expB).toLocaleString()}`
+                });
+            } 
+            else {
+                // อัปเกรด Regex: ค้นหาตัวเลขในประโยค แม้จะพิมพ์ติดกันเช่น "ค่าเสื้อ100" หรือ "+1000ขายของ"
+                const match = text.match(/([+-]?\d+(?:\.\d+)?)/);
+                
+                if (match) {
+                    let rawAmount = match[1];
+                    let note = text.replace(rawAmount, '').trim().substring(0, 40); // ดึงข้อความที่เหลือมาเป็นโน้ต (ลิมิต 40 ตัวอักษร)
+                    
+                    let isIncome = rawAmount.startsWith('+');
+                    let amount = Math.abs(parseFloat(rawAmount)); // ป้องกันค่าติดลบ
+
+                    if (amount > 0) {
+                        // สเต็ปแรก: เด้งปุ่มถามกระเป๋าก่อนเสมอ!
+                        const typeText = isIncome ? 'รับ' : 'จ่าย';
+                        const walletButtons = [
+                            {
+                                type: 'action',
+                                action: {
+                                    type: 'postback',
+                                    label: '🏠 ส่วนตัว',
+                                    // ถ้ารายรับ ข้ามไปบันทึกเลย (save_tx) ถ้ารายจ่าย ให้ไปถามหมวดหมู่ (ask_cat)
+                                    data: `a=${isIncome ? 'save_tx' : 'ask_cat'}&m=${amount}&w=personal&c=${isIncome ? 'รายรับ' : ''}&n=${note}`,
+                                    displayText: `กระเป๋าส่วนตัว`
+                                }
+                            },
+                            {
+                                type: 'action',
+                                action: {
+                                    type: 'postback',
+                                    label: '🏢 ร้านค้า',
+                                    data: `a=${isIncome ? 'save_tx' : 'ask_cat'}&m=${amount}&w=business&c=${isIncome ? 'รายรับ' : ''}&n=${note}`,
+                                    displayText: `กระเป๋าร้านค้า`
+                                }
+                            }
+                        ];
+
+                        await replyMessage(event.replyToken, {
+                            type: 'text',
+                            text: `ยอด${typeText} ฿${amount.toLocaleString()}\n📝 โน้ต: ${note || '-'}\n\n👇 เลือกกระเป๋าที่ต้องการบันทึกครับ`,
+                            quickReply: { items: walletButtons }
+                        });
+                    }
+                } 
+                else {
+                    // ถ้าในประโยคไม่มีตัวเลขเลย
+                    if (text !== 'วิธีใช้') {
+                        await replyMessage(event.replyToken, { type: 'text', text: 'กรุณาพิมพ์ตัวเลขเพื่อบันทึกยอดครับ (เช่น 100 เสื้อ หรือ +500)' });
+                    }
+                }
+            }
+        }
+    }
+    res.status(200).send('OK');
 });
 
 // ฟังก์ชันแยกประเภท Event ที่ LINE ส่งมา
@@ -305,160 +453,7 @@ app.delete('/api/categories', express.json(), async (req, res) => {
 // ==========================================
 // 6. ระบบแชทบอต (LINE Webhook) - อัปเกรดฉลาด 100%
 // ==========================================
-app.post('/webhook', express.json(), async (req, res) => {
-    const events = req.body.events;
-    if (!events || events.length === 0) return res.status(200).send('OK');
 
-    for (const event of events) {
-        const userId = event.source.userId;
-        const LINE_TOKEN = process.env.LINE_ACCESS_TOKEN; 
-
-        // ฟังก์ชันช่วยส่งข้อความ LINE
-        const replyMessage = async (replyToken, payload) => {
-            try {
-                await fetch('https://api.line.me/v2/bot/message/reply', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}` },
-                    body: JSON.stringify({ replyToken: replyToken, messages: [payload] })
-                });
-            } catch (err) { console.error("LINE Reply Error:", err); }
-        };
-
-        // 🟢 1. กรณีผู้ใช้ "กดปุ่ม (Quick Reply)"
-        if (event.type === 'postback') {
-            const params = new URLSearchParams(event.postback.data);
-            const action = params.get('a');
-            const amount = parseFloat(params.get('m'));
-            const wallet = params.get('w');
-            const note = params.get('n');
-
-            // 1.1 ถ้ากดเลือกกระเป๋าแล้ว -> เด้งปุ่มถามหมวดหมู่ต่อ (ดึงจากฐานข้อมูลจริง)
-            if (action === 'ask_cat') {
-                // ดึงหมวดหมู่จาก Supabase ตามกระเป๋าที่เลือก
-                const { data: cats } = await supabase.from('categories').select('category_name').eq('userId', userId).eq('wallet_type', wallet);
-                
-                let catNames = [];
-                if (cats && cats.length > 0) {
-                    // เอาเฉพาะรายจ่าย และจำกัดแค่ 13 ปุ่ม (ตามข้อจำกัด LINE)
-                    catNames = cats.map(c => c.category_name).filter(c => c !== 'รายรับ').slice(0, 13);
-                } 
-                if (catNames.length === 0) catNames = ['อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'ทั่วไป']; // ค่าเริ่มต้นถ้ายังไม่ได้ตั้งค่า
-
-                const catButtons = catNames.map(c => ({
-                    type: 'action',
-                    action: {
-                        type: 'postback',
-                        label: `📂 ${c.length > 18 ? c.substring(0,18) : c}`, 
-                        data: `a=save_tx&m=${amount}&w=${wallet}&c=${c}&n=${note}`,
-                        displayText: `เลือกหมวด: ${c}`
-                    }
-                }));
-
-                const walletIcon = wallet === 'personal' ? '🏠' : '🏢';
-                await replyMessage(event.replyToken, {
-                    type: 'text',
-                    text: `${walletIcon} เลือกหมวดหมู่สำหรับยอด ฿${amount.toLocaleString()} ครับ`,
-                    quickReply: { items: catButtons }
-                });
-            }
-            
-            // 1.2 ถ้ากดเลือกหมวดหมู่เสร็จแล้ว (หรือเป็นรายรับ) -> บันทึกลงฐานข้อมูลเลย
-            else if (action === 'save_tx') {
-                const category = params.get('c');
-                const { error } = await supabase.from('transactions').insert([{
-                    userId: userId,
-                    amount: amount,
-                    category: category,
-                    wallet_type: wallet,
-                    note: note
-                }]);
-
-                const isIncome = category === 'รายรับ';
-                const emoji = isIncome ? '🟢' : '🔴';
-                const typeName = isIncome ? 'รายรับ' : 'รายจ่าย';
-                const walletIcon = wallet === 'personal' ? '🏠 ส่วนตัว' : '🏢 ร้านค้า';
-
-                await replyMessage(event.replyToken, {
-                    type: 'text',
-                    text: `✅ บันทึก${typeName}สำเร็จ!\n${emoji} จำนวน: ฿${amount.toLocaleString()}\n💼 กระเป๋า: ${walletIcon}\n📂 หมวดหมู่: ${category}\n📝 โน้ต: ${note || '-'}`
-                });
-            }
-        }
-
-        // 🟢 2. กรณีผู้ใช้ "พิมพ์ข้อความ" (ดักจับตัวเลขและโน้ตแบบฉลาด)
-        else if (event.type === 'message' && event.message.type === 'text') {
-            const text = event.message.text.trim();
-
-            if (text === 'สรุป' || text === 'สรุปยอด') {
-                const now = new Date();
-                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-                const { data } = await supabase.from('transactions').select('*').eq('userId', userId).gte('created_at', startOfMonth);
-                let incP = 0, expP = 0, incB = 0, expB = 0;
-                if (data) {
-                    data.forEach(item => {
-                        if (item.wallet_type === 'personal') { item.category === 'รายรับ' ? incP += item.amount : expP += item.amount; }
-                        else { item.category === 'รายรับ' ? incB += item.amount : expB += item.amount; }
-                    });
-                }
-                await replyMessage(event.replyToken, { 
-                    type: 'text', 
-                    text: `📊 สรุปยอดเดือนนี้\n\n🏠 ส่วนตัว\nรับ: ฿${incP.toLocaleString()} | จ่าย: ฿${expP.toLocaleString()}\nสุทธิ: ฿${(incP - expP).toLocaleString()}\n\n🏢 ร้านค้า\nรับ: ฿${incB.toLocaleString()} | จ่าย: ฿${expB.toLocaleString()}\nสุทธิ: ฿${(incB - expB).toLocaleString()}`
-                });
-            } 
-            else {
-                // อัปเกรด Regex: ค้นหาตัวเลขในประโยค แม้จะพิมพ์ติดกันเช่น "ค่าเสื้อ100" หรือ "+1000ขายของ"
-                const match = text.match(/([+-]?\d+(?:\.\d+)?)/);
-                
-                if (match) {
-                    let rawAmount = match[1];
-                    let note = text.replace(rawAmount, '').trim().substring(0, 40); // ดึงข้อความที่เหลือมาเป็นโน้ต (ลิมิต 40 ตัวอักษร)
-                    
-                    let isIncome = rawAmount.startsWith('+');
-                    let amount = Math.abs(parseFloat(rawAmount)); // ป้องกันค่าติดลบ
-
-                    if (amount > 0) {
-                        // สเต็ปแรก: เด้งปุ่มถามกระเป๋าก่อนเสมอ!
-                        const typeText = isIncome ? 'รับ' : 'จ่าย';
-                        const walletButtons = [
-                            {
-                                type: 'action',
-                                action: {
-                                    type: 'postback',
-                                    label: '🏠 ส่วนตัว',
-                                    // ถ้ารายรับ ข้ามไปบันทึกเลย (save_tx) ถ้ารายจ่าย ให้ไปถามหมวดหมู่ (ask_cat)
-                                    data: `a=${isIncome ? 'save_tx' : 'ask_cat'}&m=${amount}&w=personal&c=${isIncome ? 'รายรับ' : ''}&n=${note}`,
-                                    displayText: `กระเป๋าส่วนตัว`
-                                }
-                            },
-                            {
-                                type: 'action',
-                                action: {
-                                    type: 'postback',
-                                    label: '🏢 ร้านค้า',
-                                    data: `a=${isIncome ? 'save_tx' : 'ask_cat'}&m=${amount}&w=business&c=${isIncome ? 'รายรับ' : ''}&n=${note}`,
-                                    displayText: `กระเป๋าร้านค้า`
-                                }
-                            }
-                        ];
-
-                        await replyMessage(event.replyToken, {
-                            type: 'text',
-                            text: `ยอด${typeText} ฿${amount.toLocaleString()}\n📝 โน้ต: ${note || '-'}\n\n👇 เลือกกระเป๋าที่ต้องการบันทึกครับ`,
-                            quickReply: { items: walletButtons }
-                        });
-                    }
-                } 
-                else {
-                    // ถ้าในประโยคไม่มีตัวเลขเลย
-                    if (text !== 'วิธีใช้') {
-                        await replyMessage(event.replyToken, { type: 'text', text: 'กรุณาพิมพ์ตัวเลขเพื่อบันทึกยอดครับ (เช่น 100 เสื้อ หรือ +500)' });
-                    }
-                }
-            }
-        }
-    }
-    res.status(200).send('OK');
-});
 
 const PORT = 3000;
 app.listen(PORT, () => {
