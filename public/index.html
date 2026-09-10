@@ -3,130 +3,397 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบบัญชีของฉัน</title>
+    <title>ระบบบัญชี CASHFLOW</title>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
-    <style> body { font-family: 'Kanit', sans-serif; background-color: #F3F4F6; } </style>
+    <style> 
+        body { font-family: 'Kanit', sans-serif; background-color: #121212; color: #ffffff; margin: 0; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        .calendar-cell { background-color: #18181B; border-radius: 8px; padding: 4px; text-align: center; min-height: 65px; border: 1px solid #27272A; display: flex; flex-direction: column; justify-content: flex-start; cursor: pointer; transition: all 0.2s ease;}
+        .calendar-cell:active { transform: scale(0.95); background-color: #27272A; }
+        .calendar-header { font-size: 0.75rem; color: #A1A1AA; text-align: center; padding-bottom: 8px; font-weight: 600;}
+        .nav-inactive { color: #71717A; transition: color 0.3s; }
+        .nav-active { color: #00E676; } 
+        .bounce-logo { animation: bounceSoft 2s infinite ease-in-out; }
+        @keyframes bounceSoft { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+        .dots::after { content: ''; animation: blink 1.5s infinite steps(4, end); }
+        @keyframes blink { 0%, 20% { content: ''; } 40% { content: '.'; } 60% { content: '. .'; } 80%, 100% { content: '. . .'; } }
+    </style>
 </head>
-<body class="text-gray-800 pb-20">
+<body class="pb-28">
 
-    <!-- แถบด้านบนและเมนูนำทาง -->
-    <div class="bg-blue-600 text-white text-center p-5 rounded-b-3xl shadow-lg sticky top-0 z-10">
-        <h2 class="text-xl font-semibold">บัญชีส่วนตัว</h2>
-        <div class="flex justify-center mt-3 gap-4">
-            <button onclick="switchTab('dashboard')" id="btn-dashboard" class="px-4 py-1 bg-white text-blue-600 rounded-full font-bold text-sm">📊 แดชบอร์ด</button>
-            <button onclick="switchTab('settings')" id="btn-settings" class="px-4 py-1 bg-blue-500 text-white rounded-full font-bold text-sm opacity-80">⚙️ ตั้งค่า</button>
-        </div>
+    <div id="custom-loader" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#121212] transition-opacity duration-500">
+        <img src="icon.png" alt="Logo" class="w-24 h-24 mb-4 bounce-logo" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'">
+        <p class="text-sm text-gray-500 mt-2">กำลังเตรียมข้อมูล<span class="dots"></span></p>
     </div>
-    
-    <div id="loading" class="text-center mt-20 text-gray-500 animate-pulse">กำลังโหลดข้อมูล... ⏳</div>
 
-    <!-- หน้า 1: แดชบอร์ด (เอาไว้ดูสรุปเหมือนเดิม) -->
-    <div class="max-w-md mx-auto mt-6 px-4 hidden" id="dashboard">
-        <div class="grid grid-cols-2 gap-4 mb-6">
-            <div class="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-green-500">
-                <p class="text-xs text-gray-500 mb-1">รายรับรวม</p>
-                <p class="text-lg font-bold text-green-600" id="totalIncome">0 ฿</p>
+    <!-- หน้าต่าง Popup สรุปรายวัน -->
+    <div id="dayModal" class="fixed inset-0 z-50 hidden flex-col items-center justify-end bg-black/70 backdrop-blur-sm transition-opacity duration-300">
+        <div class="bg-[#1E1E23] w-full max-w-md rounded-t-3xl border-t border-[#2A2A30] p-6 pb-safe transform transition-transform duration-300 translate-y-full" id="dayModalContent">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-lg font-bold text-[#00E676]" id="dayModalTitle">รายการวันที่ ...</h3>
+                <button onclick="closeDayModal()" class="text-gray-400 hover:text-white bg-[#121212] rounded-full p-2 border border-[#27272A]">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
             </div>
-            <div class="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-red-500">
-                <p class="text-xs text-gray-500 mb-1">รายจ่ายรวม</p>
-                <p class="text-lg font-bold text-red-600" id="totalExpense">0 ฿</p>
-            </div>
-        </div>
-        <div class="bg-white p-5 rounded-2xl shadow-sm mb-6">
-            <h3 class="text-md font-semibold text-gray-700 mb-4 text-center">สัดส่วนรายจ่าย</h3>
-            <canvas id="myChart"></canvas> 
+            <div id="dayModalList" class="flex flex-col gap-2 max-h-[50vh] overflow-y-auto pb-4"></div>
         </div>
     </div>
 
-    <!-- หน้า 2: ตั้งค่าหมวดหมู่ -->
-    <div class="max-w-md mx-auto mt-6 px-4 hidden" id="settings">
-        <!-- ฟอร์มเพิ่มหมวดหมู่ -->
-        <div class="bg-white p-5 rounded-2xl shadow-sm mb-6">
-            <h3 class="text-md font-semibold text-gray-700 mb-4">➕ เพิ่มหมวดหมู่ใหม่</h3>
-            <select id="newWallet" class="w-full mb-3 p-2 border rounded-lg bg-gray-50">
-                <option value="personal">🏠 กระเป๋าส่วนตัว</option>
-                <option value="business">🏢 กระเป๋าร้านค้า</option>
-            </select>
-            <input type="text" id="newCategory" placeholder="ชื่อหมวดหมู่ (เช่น ช้อปปิ้ง, ค่าน้ำไฟ)" class="w-full mb-3 p-2 border rounded-lg bg-gray-50">
-            <input type="number" id="newLimit" placeholder="ตั้งงบจำกัดต่อเดือน (ใส่ 0 คือไม่จำกัด)" class="w-full mb-3 p-2 border rounded-lg bg-gray-50">
-            <button onclick="addCategory()" class="w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow">บันทึกหมวดหมู่</button>
+    <div id="main-content" class="hidden max-w-md mx-auto pt-4 px-4">
+        
+        <div class="flex justify-center mb-6 bg-[#18181B] rounded-full p-1 border border-[#27272A] max-w-[220px] mx-auto shadow-sm">
+            <button onclick="setWallet('personal')" id="btn-wallet-personal" class="flex-1 py-1.5 text-xs font-bold rounded-full bg-[#00E676] text-black transition-all">🏠 ส่วนตัว</button>
+            <button onclick="setWallet('business')" id="btn-wallet-business" class="flex-1 py-1.5 text-xs font-bold rounded-full text-gray-400 hover:text-white transition-all">🏢 ร้านค้า</button>
         </div>
 
-        <!-- รายการหมวดหมู่ที่มีอยู่ -->
-        <div class="bg-white p-5 rounded-2xl shadow-sm">
-            <h3 class="text-md font-semibold text-gray-700 mb-4">📝 หมวดหมู่ของคุณ</h3>
-            <div id="categoryList" class="flex flex-col gap-3"></div>
+        <div class="text-center mb-6">
+            <p class="text-xs text-gray-500 mb-1">กำไรสุทธิ (<span id="summaryMonthLabel">...</span>)</p>
+            <h2 class="text-4xl font-bold mt-1 tracking-tight" id="netProfit">฿0.00</h2>
+            <div class="flex justify-between mt-5 gap-3">
+                <div class="flex-1 bg-[#18181B] p-3 rounded-2xl border border-[#27272A] flex items-center justify-between shadow-md">
+                    <span class="text-xs text-gray-400">รายรับ</span>
+                    <span class="text-md font-semibold text-[#00E676]" id="totalIncome">฿0</span>
+                </div>
+                <div class="flex-1 bg-[#18181B] p-3 rounded-2xl border border-[#27272A] flex items-center justify-between shadow-md">
+                    <span class="text-xs text-gray-400">รายจ่าย</span>
+                    <span class="text-md font-semibold text-[#FF5252]" id="totalExpense">฿0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- หน้า 1: ปฏิทินบัญชี -->
+        <div id="tab-home" class="mb-6">
+            <div class="bg-[#1E1E23] rounded-2xl border border-[#2A2A30] p-4 shadow-lg">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-md font-semibold text-gray-200">ปฏิทินบัญชี</h3>
+                    <div class="flex items-center gap-3 bg-[#121212] px-3 py-1.5 rounded-full border border-[#2A2A30]">
+                        <button onclick="changeMonth(-1)" class="text-gray-400 hover:text-white px-2">&lt;</button>
+                        <span class="text-xs font-medium w-24 text-center text-[#00E676]" id="currentMonthYear">...</span>
+                        <button onclick="changeMonth(1)" class="text-gray-400 hover:text-white px-2">&gt;</button>
+                    </div>
+                </div>
+                <div class="calendar-grid mb-2">
+                    <div class="calendar-header">อา.</div><div class="calendar-header">จ.</div><div class="calendar-header">อ.</div><div class="calendar-header">พ.</div><div class="calendar-header">พฤ.</div><div class="calendar-header">ศ.</div><div class="calendar-header">ส.</div>
+                </div>
+                <div class="calendar-grid" id="calendarGrid"></div>
+            </div>
+        </div>
+
+        <!-- หน้า 2: ประวัติ -->
+        <div id="tab-history" class="hidden mb-6">
+            <div class="bg-[#1E1E23] rounded-2xl border border-[#2A2A30] p-4 shadow-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-md font-semibold text-gray-200">ประวัติรายการ</h3>
+                    
+                    <!-- ย้ายปุ่ม Excel ออกไป และคืนชื่อเดือนเต็มๆ กลับมา -->
+                    <div class="flex items-center gap-3 bg-[#121212] px-3 py-1.5 rounded-full border border-[#2A2A30]">
+                        <button onclick="changeMonth(-1)" class="text-gray-400 hover:text-white px-2">&lt;</button>
+                        <span class="text-xs font-medium w-24 text-center text-[#00E676]" id="historyMonthYear">...</span>
+                        <button onclick="changeMonth(1)" class="text-gray-400 hover:text-white px-2">&gt;</button>
+                    </div>
+                </div>
+
+                <!-- 🟢 ย้ายปุ่ม Excel มาเป็นปุ่มยาวแบบพรีเมียมตรงนี้ -->
+                <button onclick="exportCSV()" class="w-full mb-4 bg-[#121212] border border-[#00E676]/30 text-[#00E676] text-xs font-bold py-2.5 rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-[#18181B]">
+                    <span class="text-base">📥</span> ดาวน์โหลด Excel ประวัติเดือนนี้
+                </button>
+
+                <div id="historyList" class="flex flex-col gap-2"></div>
+            </div>
+        </div>
+
+        <!-- หน้า 3: ตั้งค่า -->
+        <div id="tab-settings" class="hidden mb-6">
+            <div class="bg-[#1E1E23] rounded-2xl border border-[#2A2A30] p-4 shadow-lg mb-4">
+                <h3 class="text-md font-semibold text-gray-200 mb-4">➕ เพิ่มหมวดหมู่ & ลิมิต</h3>
+                <select id="newWallet" class="w-full mb-3 p-2.5 border border-[#27272A] rounded-lg bg-[#121212] text-white outline-none"><option value="personal">🏠 กระเป๋าส่วนตัว</option><option value="business">🏢 กระเป๋าร้านค้า</option></select>
+                <input type="text" id="newCategory" placeholder="ชื่อหมวดหมู่ (เช่น ช้อปปิ้ง)" class="w-full mb-3 p-2.5 border border-[#27272A] rounded-lg bg-[#121212] text-white outline-none placeholder-gray-600">
+                <input type="number" id="newLimit" placeholder="ตั้งงบจำกัดต่อเดือน (0 = ไม่จำกัด)" class="w-full mb-4 p-2.5 border border-[#27272A] rounded-lg bg-[#121212] text-white outline-none placeholder-gray-600">
+                <button onclick="addCategory()" class="w-full bg-[#00E676] text-black font-bold py-3 rounded-lg shadow-lg active:scale-95 transition-transform">บันทึกหมวดหมู่</button>
+            </div>
+            <div class="bg-[#1E1E23] rounded-2xl border border-[#2A2A30] p-4 shadow-lg">
+                <h3 class="text-md font-semibold text-gray-200 mb-4">📝 หมวดหมู่ปัจจุบัน</h3>
+                <div id="categoryList" class="flex flex-col gap-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- เมนูด้านล่าง -->
+    <div class="fixed bottom-0 left-0 w-full bg-[#121212]/90 backdrop-blur-md border-t border-[#27272A] pb-safe z-40">
+        <div class="flex justify-between items-end h-16 max-w-sm mx-auto px-6 relative">
+            <button onclick="switchTab('history')" id="btn-history" class="nav-inactive flex flex-col items-center justify-center w-16 h-16 pb-2">
+                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                <span class="text-[10px] font-semibold">ประวัติ</span>
+            </button>
+            <button onclick="switchTab('home')" id="btn-home" class="relative -top-5 flex flex-col items-center justify-center group">
+                <div id="home-icon-bg" class="bg-[#00E676] text-black w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(0,230,118,0.4)] transition-colors">
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                </div>
+                <span class="text-[10px] font-semibold text-[#00E676] mt-2" id="home-text">หน้าหลัก</span>
+            </button>
+            <button onclick="switchTab('settings')" id="btn-settings" class="nav-inactive flex flex-col items-center justify-center w-16 h-16 pb-2">
+                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <span class="text-[10px] font-semibold">ตั้งค่า</span>
+            </button>
         </div>
     </div>
 
     <script>
         let myUserId = '';
-        let myChartInstance = null;
+        let allTransactions = []; 
+        let viewDate = new Date(); 
+        let currentWallet = 'personal'; 
+        const renderUrl = "https://lekahigh.onrender.com";
 
         async function main() {
             try {
-                await liff.init({ liffId: "2011471625-4VRpJIDF" }); // 🛑 แก้ ID ตรงนี้
+                await liff.init({ liffId: "2011471625-4VRpJIDF" }); 
                 if (liff.isLoggedIn()) {
                     myUserId = (await liff.getProfile()).userId;
                     fetchData(myUserId); 
-                    fetchCategories(myUserId);
+                    fetchCategories(myUserId); 
                 } else { liff.login(); }
             } catch (err) { console.error(err); }
         }
 
-        // --- ระบบสลับหน้าเว็บ ---
+        function setWallet(walletType) {
+            currentWallet = walletType;
+            document.getElementById('btn-wallet-personal').className = walletType === 'personal' ? 'flex-1 py-1.5 text-xs font-bold rounded-full bg-[#00E676] text-black transition-all' : 'flex-1 py-1.5 text-xs font-bold rounded-full text-gray-400 hover:text-white transition-all';
+            document.getElementById('btn-wallet-business').className = walletType === 'business' ? 'flex-1 py-1.5 text-xs font-bold rounded-full bg-[#00E676] text-black transition-all' : 'flex-1 py-1.5 text-xs font-bold rounded-full text-gray-400 hover:text-white transition-all';
+            updateDashboard(); 
+        }
+
         function switchTab(tab) {
-            document.getElementById('dashboard').style.display = tab === 'dashboard' ? 'block' : 'none';
-            document.getElementById('settings').style.display = tab === 'settings' ? 'block' : 'none';
+            document.getElementById('tab-home').style.display = tab === 'home' ? 'block' : 'none';
+            document.getElementById('tab-history').style.display = tab === 'history' ? 'block' : 'none';
+            document.getElementById('tab-settings').style.display = tab === 'settings' ? 'block' : 'none';
             
-            document.getElementById('btn-dashboard').className = tab === 'dashboard' ? 'px-4 py-1 bg-white text-blue-600 rounded-full font-bold text-sm' : 'px-4 py-1 bg-blue-500 text-white rounded-full font-bold text-sm opacity-80';
-            document.getElementById('btn-settings').className = tab === 'settings' ? 'px-4 py-1 bg-white text-blue-600 rounded-full font-bold text-sm' : 'px-4 py-1 bg-blue-500 text-white rounded-full font-bold text-sm opacity-80';
+            document.getElementById('btn-history').className = tab === 'history' ? 'nav-active flex flex-col items-center justify-center w-16 h-16 pb-2' : 'nav-inactive flex flex-col items-center justify-center w-16 h-16 pb-2';
+            document.getElementById('btn-settings').className = tab === 'settings' ? 'nav-active flex flex-col items-center justify-center w-16 h-16 pb-2' : 'nav-inactive flex flex-col items-center justify-center w-16 h-16 pb-2';
+            
+            const homeBg = document.getElementById('home-icon-bg');
+            const homeText = document.getElementById('home-text');
+            if(tab === 'home') {
+                homeBg.className = "bg-[#00E676] text-black w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(0,230,118,0.4)] transition-colors";
+                homeText.className = "text-[10px] font-semibold text-[#00E676] mt-2";
+            } else {
+                homeBg.className = "bg-[#1E1E23] text-gray-400 w-14 h-14 rounded-full flex items-center justify-center border border-[#27272A] transition-colors";
+                homeText.className = "text-[10px] font-semibold text-gray-500 mt-2";
+            }
         }
 
-        // --- ดึงข้อมูลสรุปยอด (แดชบอร์ด) ---
         async function fetchData(userId) {
-            const response = await fetch(`/api/data?userId=${userId}`);
-            const data = await response.json();
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('dashboard').style.display = 'block';
-            renderDashboard(data); 
+            try {
+                const response = await fetch(`${renderUrl}/api/data?userId=${userId}`);
+                allTransactions = await response.json();
+                
+                document.getElementById('custom-loader').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('custom-loader').style.display = 'none';
+                    document.getElementById('main-content').classList.remove('hidden');
+                }, 500);
+
+                updateDashboard(); 
+            } catch (error) { console.error(error); }
         }
 
-        function renderDashboard(data) {
-            let totalInc = 0, totalExp = 0, expCats = {};
+        function changeMonth(offset) {
+            viewDate.setMonth(viewDate.getMonth() + offset);
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            const filteredData = allTransactions.filter(t => {
+                const d = new Date(t.created_at);
+                return t.wallet_type === currentWallet && d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
+            });
+
+            const monthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            const labelText = `${monthNames[viewDate.getMonth()]} ${viewDate.getFullYear() + 543}`;
+            
+            // ใช้ชื่อเดือนเต็มๆ หมดเลยครับ ไม่มีการตัดคำแล้ว
+            document.getElementById('summaryMonthLabel').innerText = labelText;
+            document.getElementById('currentMonthYear').innerText = labelText;
+            document.getElementById('historyMonthYear').innerText = labelText;
+
+            calculateSummary(filteredData);
+            renderCalendar(filteredData); 
+            renderHistory(filteredData);
+        }
+
+        function calculateSummary(data) {
+            let totalInc = 0, totalExp = 0;
+            data.forEach(item => { if (item.category === 'รายรับ') totalInc += item.amount; else totalExp += item.amount; });
+            document.getElementById('totalIncome').innerText = '฿' + totalInc.toLocaleString();
+            document.getElementById('totalExpense').innerText = '฿' + totalExp.toLocaleString();
+            document.getElementById('netProfit').innerText = '฿' + (totalInc - totalExp).toLocaleString();
+        }
+
+        function renderCalendar(data) {
+            const grid = document.getElementById('calendarGrid');
+            grid.innerHTML = '';
+            const year = viewDate.getFullYear(), month = viewDate.getMonth(); 
+            const firstDay = new Date(year, month, 1).getDay(), daysInMonth = new Date(year, month + 1, 0).getDate(); 
+            for (let i = 0; i < firstDay; i++) { grid.innerHTML += `<div class="calendar-cell cursor-default" style="background-color: transparent; border: none;"></div>`; }
+
+            let dailyData = {};
             data.forEach(item => {
-                if (item.category === 'รายรับ') totalInc += item.amount;
-                else {
-                    totalExp += item.amount;
-                    expCats[item.category] = (expCats[item.category] || 0) + item.amount;
-                }
+                const day = new Date(item.created_at).getDate();
+                if(!dailyData[day]) dailyData[day] = { inc: 0, exp: 0 };
+                if(item.category === 'รายรับ') dailyData[day].inc += item.amount; else dailyData[day].exp += item.amount;
             });
-            document.getElementById('totalIncome').innerText = totalInc.toLocaleString() + ' ฿';
-            document.getElementById('totalExpense').innerText = totalExp.toLocaleString() + ' ฿';
 
-            if(myChartInstance) myChartInstance.destroy();
-            myChartInstance = new Chart(document.getElementById('myChart').getContext('2d'), {
-                type: 'doughnut',
-                data: { labels: Object.keys(expCats), datasets: [{ data: Object.values(expCats), backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'] }] }
+            for (let day = 1; day <= daysInMonth; day++) {
+                let cellHtml = `<div class="calendar-cell" onclick="openDayModal(${year}, ${month}, ${day})">
+                                <div class="text-[11px] font-bold text-gray-400 mb-1 leading-none text-left">${day}</div>`; 
+                if (dailyData[day]) {
+                    if (dailyData[day].inc > 0) cellHtml += `<div class="text-[#00E676] text-[9px] font-medium leading-tight text-right">+${dailyData[day].inc}</div>`;
+                    if (dailyData[day].exp > 0) cellHtml += `<div class="text-[#FF5252] text-[9px] font-medium leading-tight text-right">-${dailyData[day].exp}</div>`;
+                }
+                cellHtml += `</div>`;
+                grid.innerHTML += cellHtml;
+            }
+        }
+
+        function openDayModal(year, month, day) {
+            const dateStr = `${day}/${month + 1}/${year + 543}`;
+            document.getElementById('dayModalTitle').innerText = `รายการวันที่ ${dateStr}`;
+            const list = document.getElementById('dayModalList');
+            list.innerHTML = '';
+
+            const dayData = allTransactions.filter(t => {
+                const d = new Date(t.created_at);
+                return t.wallet_type === currentWallet && d.getDate() === day && d.getMonth() === month && d.getFullYear() === year;
+            });
+
+            if (dayData.length === 0) {
+                list.innerHTML = `<p class="text-gray-500 text-sm text-center py-8">ไม่มีรายการใช้จ่ายในวันนี้</p>`;
+            } else {
+                dayData.forEach(item => {
+                    const isIncome = item.category === 'รายรับ';
+                    const textColor = isIncome ? 'text-[#00E676]' : 'text-[#FF5252]';
+                    const sign = isIncome ? '+' : '-';
+                    const timeStr = new Date(item.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+                    list.innerHTML += `
+                        <div class="flex justify-between items-center bg-[#121212] p-3 rounded-xl border border-[#27272A]">
+                            <div>
+                                <p class="font-semibold text-gray-200 text-sm">${item.category}</p>
+                                <p class="text-[10px] text-gray-500">${timeStr}</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="font-bold text-sm ${textColor}">${sign}${item.amount.toLocaleString()} ฿</div>
+                                <button onclick="deleteTransaction(${item.id}); closeDayModal();" class="text-gray-500 hover:text-red-500 p-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
+                        </div>`;
+                });
+            }
+
+            const modal = document.getElementById('dayModal');
+            const content = document.getElementById('dayModalContent');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => { content.classList.remove('translate-y-full'); }, 10);
+        }
+
+        function closeDayModal() {
+            const modal = document.getElementById('dayModal');
+            const content = document.getElementById('dayModalContent');
+            content.classList.add('translate-y-full');
+            setTimeout(() => { modal.classList.add('hidden'); modal.classList.remove('flex'); }, 300);
+        }
+
+        function renderHistory(data) {
+            const list = document.getElementById('historyList');
+            list.innerHTML = '';
+            if(data.length === 0) { list.innerHTML = `<p class="text-gray-500 text-sm text-center py-4">ไม่มีรายการในเดือนนี้</p>`; return; }
+
+            data.forEach(item => {
+                const isIncome = item.category === 'รายรับ';
+                const textColor = isIncome ? 'text-[#00E676]' : 'text-[#FF5252]';
+                const sign = isIncome ? '+' : '-';
+                const icon = item.wallet_type === 'personal' ? '🏠' : '🏢';
+                const d = new Date(item.created_at);
+                const dateStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()+543} ${d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
+
+                list.innerHTML += `
+                    <div class="flex justify-between items-center bg-[#18181B] p-3 rounded-xl border border-[#27272A]">
+                        <div class="flex items-center gap-3">
+                            <div class="text-xl">${icon}</div>
+                            <div>
+                                <p class="font-semibold text-gray-200 text-sm">${item.category}</p>
+                                <p class="text-[10px] text-gray-500">${dateStr}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="font-bold text-sm ${textColor}">${sign}${item.amount.toLocaleString()} ฿</div>
+                            <button onclick="deleteTransaction(${item.id})" class="text-gray-500 hover:text-red-500 p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </div>`;
             });
         }
 
-        // --- ระบบดึง/เพิ่ม/ลบ หมวดหมู่ ---
+        async function deleteTransaction(txId) {
+            if(confirm('คุณต้องการลบรายการนี้ใช่หรือไม่? (ยอดเงินจะถูกคำนวณใหม่)')) {
+                document.getElementById('custom-loader').style.display = 'flex';
+                document.getElementById('custom-loader').style.opacity = '1';
+                
+                await fetch(`${renderUrl}/api/transactions`, {
+                    method: 'DELETE', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ transactionId: txId })
+                });
+                
+                fetchData(myUserId); 
+            }
+        }
+
+        function exportCSV() {
+            const filteredData = allTransactions.filter(t => {
+                const d = new Date(t.created_at);
+                return t.wallet_type === currentWallet && d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
+            });
+            if (filteredData.length === 0) return alert('ไม่มีข้อมูลในเดือนนี้ให้ดาวน์โหลดครับ');
+
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
+            csvContent += "วันที่,เวลา,กระเป๋า,หมวดหมู่,ประเภท,จำนวนเงิน(บาท)\n";
+
+            filteredData.forEach(item => {
+                const d = new Date(item.created_at);
+                const dateStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()+543}`;
+                const timeStr = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+                const walletStr = item.wallet_type === 'personal' ? 'ส่วนตัว' : 'ร้านค้า';
+                const typeStr = item.category === 'รายรับ' ? 'รายรับ' : 'รายจ่าย';
+                csvContent += `${dateStr},${timeStr},${walletStr},${item.category},${typeStr},${item.amount}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            const monthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            link.setAttribute("download", `บัญชี_${currentWallet}_${monthNames[viewDate.getMonth()]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
         async function fetchCategories(userId) {
-            const res = await fetch(`/api/categories?userId=${userId}`);
+            const res = await fetch(`${renderUrl}/api/categories?userId=${userId}`);
             const cats = await res.json();
             const list = document.getElementById('categoryList');
             list.innerHTML = '';
             cats.forEach(c => {
                 const icon = c.wallet_type === 'personal' ? '🏠' : '🏢';
-                const limitTxt = c.monthly_limit > 0 ? `<span class="text-xs text-red-500">งบ: ${c.monthly_limit.toLocaleString()}฿</span>` : '';
+                const limitTxt = c.monthly_limit > 0 ? `<br><span class="text-[10px] text-[#FF5252]">งบ: ${c.monthly_limit.toLocaleString()}฿</span>` : '';
                 list.innerHTML += `
-                    <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
-                        <div><p class="font-semibold text-gray-800 text-sm">${icon} ${c.category_name}</p>${limitTxt}</div>
-                        ${c.category_name !== 'รายรับ' ? `<button onclick="deleteCategory('${c.wallet_type}', '${c.category_name}')" class="text-red-500 text-sm font-bold bg-red-100 px-2 py-1 rounded">ลบ</button>` : ''}
+                    <div class="flex justify-between items-center bg-[#18181B] p-3 rounded-xl border border-[#27272A]">
+                        <div><p class="font-medium text-gray-300 text-sm">${icon} ${c.category_name}</p>${limitTxt}</div>
+                        ${c.category_name !== 'รายรับ' ? `<button onclick="deleteCategory('${c.wallet_type}', '${c.category_name}')" class="text-xs font-bold text-red-500 bg-red-500/10 border border-red-500/30 px-3 py-1 rounded-lg">ลบ</button>` : ''}
                     </div>`;
             });
         }
@@ -135,26 +402,15 @@
             const wallet = document.getElementById('newWallet').value;
             const catName = document.getElementById('newCategory').value;
             const limit = document.getElementById('newLimit').value || 0;
-            
             if(!catName) return alert('กรุณาพิมพ์ชื่อหมวดหมู่');
-            
-            await fetch('/api/categories', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ userId: myUserId, wallet_type: wallet, category_name: catName, monthly_limit: parseInt(limit) })
-            });
-            
-            document.getElementById('newCategory').value = '';
-            document.getElementById('newLimit').value = '';
-            fetchCategories(myUserId); // รีเฟรชรายการ
-            alert('บันทึกเรียบร้อย! ลองพิมพ์ตัวเลขในแชทดูได้เลยครับ');
+            await fetch(`${renderUrl}/api/categories`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ userId: myUserId, wallet_type: wallet, category_name: catName, monthly_limit: parseInt(limit) }) });
+            document.getElementById('newCategory').value = ''; document.getElementById('newLimit').value = '';
+            fetchCategories(myUserId); alert('บันทึกหมวดหมู่สำเร็จ!');
         }
 
         async function deleteCategory(wallet, catName) {
-            if(confirm(`ต้องการลบหมวดหมู่ "${catName}" ใช่ไหม?`)) {
-                await fetch('/api/categories', {
-                    method: 'DELETE', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ userId: myUserId, wallet_type: wallet, category_name: catName })
-                });
+            if(confirm(`ยืนยันการลบหมวดหมู่ "${catName}" ?`)) {
+                await fetch(`${renderUrl}/api/categories`, { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ userId: myUserId, wallet_type: wallet, category_name: catName }) });
                 fetchCategories(myUserId);
             }
         }
