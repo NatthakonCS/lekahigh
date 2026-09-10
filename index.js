@@ -19,6 +19,10 @@ const client = new line.messagingApi.MessagingApiClient({
 const app = express();
 app.use(cors());
 app.use(express.static('public'));
+// Endpoint สำหรับให้บอทมากระตุ้นไม่ให้เซิร์ฟเวอร์หลับ
+app.get('/ping', (req, res) => {
+  res.status(200).send('Bot is awake!');
+});
 
 // ==========================================
 // 1. API สำหรับหน้าเว็บ (Dashboard & LIFF)
